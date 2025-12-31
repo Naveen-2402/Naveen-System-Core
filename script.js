@@ -1,0 +1,1756 @@
+import emailjs from '@emailjs/browser';
+emailjs.init({
+  publicKey: import.meta.env.VITE_EMAILJS_PUBLIC_KEY,
+});
+/* =========================================
+   GLOBAL STATE & UTILS
+   ========================================= */
+const state = {
+    data: null,
+    hero: {
+        width: 0,
+        height: 0,
+        isMobile: false,
+        mouse: { x: null, y: null, lastX: null, lastY: null },
+        particles: [],
+        img: new Image(),
+        isGenerating: true,
+        isComplete: false,
+        hasTriggered: false,
+        triggerTime: null,
+        rafId: null,
+        generationProgress: 0
+    },
+    nav: {
+        lastScrollY: 0,
+        links: [
+            { id: 'hero-section', label: 'ROOT' },
+            { id: 'model-card-section', label: 'SPECS' },
+            { id: 'training-dashboard', label: 'LOGS' },
+            { id: 'neural-projects', label: 'NODES' },
+            { id: 'terminal-contact', label: 'SSH' }
+        ]
+    },
+    modelCard: {
+        isStreaming: false,
+        charIndex: 0,
+        jsonString: "",
+        timerInterval: null,
+        scanInterval: null,
+        cells: []
+    },
+    training: {
+        hasRendered: false,
+        observer: null,
+        zones: [],
+        baseData: [], // NEW: Stores the normalized curve shape
+        dataPoints: [] 
+    },
+    neural: {
+        isFirstClick: true,
+        archLines: [],
+        activeAgentId: null,
+        resizeObserver: null
+    },
+    contact: {
+        isRunning: false,
+        defaultPrompt: '<span class="path">user@naveen-portfolio:~/scripts$</span> <span class="cursor-blink">_</span>'
+    }
+};
+
+// Fetch Data
+async function loadData() {
+    try {
+        const response = await fetch('data.json');
+        state.data = await response.json();
+        initNavbar();
+        initHeroText();
+        initModelCard();
+        initTrainingSection();
+        initNeuralSection();
+        initContactSection();
+        initFooter();
+        initGlobalScroll();
+    } catch (error) {
+        console.error("Error loading data:", error);
+    }
+}
+
+// Global Intersection Observer for Re-triggering Animations
+const observerOptions = {
+    threshold: 0.1 // Trigger when 10% of section is visible
+};
+
+// Global Intersection Observer for Re-triggering Animations
+const sectionObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+        // 1. General CSS Transition Trigger
+        if (entry.isIntersecting) {
+            entry.target.classList.add('in-view');
+
+            // --- NEW: NAV HIGHLIGHT LOGIC ---
+            // A. Clear current active state
+            document.querySelectorAll('.nav-link').forEach(el => el.classList.remove('active'));
+            
+            // B. Determine which ID maps to the link
+            let targetId = entry.target.id;
+            
+            // Special case: The Hero section observes an inner wrapper (id="content"), 
+            // but the link points to "hero-section".
+            if(entry.target.closest('#hero-section')) {
+                targetId = 'hero-section';
+            }
+
+            // C. Highlight the matching link
+            const activeLink = document.querySelector(`.nav-link[data-target="${targetId}"]`);
+            if(activeLink) activeLink.classList.add('active');
+
+        } else {
+            entry.target.classList.remove('in-view');
+        }
+
+        // 2. Section Specific Logic
+        
+        // HERO SECTION
+        if(entry.target.closest('#hero-section')) {
+            if(!entry.isIntersecting && state.hero.isComplete) {
+                resetHeroAnimation();
+            }
+        }
+
+        // MODEL CARD SECTION
+        if(entry.target.id === 'model-card-section') {
+            if(entry.isIntersecting) {
+                startModelCardAnimation();
+            } else {
+                resetModelCardAnimation();
+            }
+        }
+
+        // TRAINING SECTION
+        if(entry.target.id === 'training-dashboard') {
+            if(entry.isIntersecting) {
+                renderTrainingGraph(); // Ensure size is correct on entry
+                startTrainingAnimation();
+            } else {
+                resetTrainingAnimation();
+            }
+        }
+
+        // NEURAL PROJECTS SECTION
+        if(entry.target.id === 'neural-projects') {
+            if(entry.isIntersecting) {
+                startNeuralAnimation();
+                // Redraw lines after transition matches positions
+                setTimeout(drawNeuralConnections, 600);
+            } else {
+                resetNeuralAnimation();
+            }
+        }
+
+        // CONTACT SECTION
+        if(entry.target.id === 'terminal-contact') {
+            if(entry.isIntersecting) {
+                startContactAnimation();
+            } else {
+                resetContactAnimation();
+            }
+        }
+    });
+}, observerOptions);
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadData();
+    initHeroCanvas();
+    
+    // Start observing elements that need animation
+    const wrappers = document.querySelectorAll('.animate-wrapper');
+    wrappers.forEach(el => sectionObserver.observe(el));
+    sectionObserver.observe(document.getElementById('model-card-section'));
+    sectionObserver.observe(document.getElementById('training-dashboard'));
+    sectionObserver.observe(document.getElementById('neural-projects'));
+    sectionObserver.observe(document.getElementById('terminal-contact'));
+});
+
+function initNavbar() {
+    const d = state.data.about.profile;
+
+    // --- 1. TERMINAL LOOPING LOGIC (Left Side) ---
+    const logoEl = document.getElementById('nav-logo');
+    const navCursor = document.querySelector('.nav-cursor');
+    if (navCursor) navCursor.style.display = 'none';
+
+    // FIX: Removed isMobile check so "root@naveen" always appears
+    const promptUser = "root";
+    const promptHost = "naveen";
+    const promptSym = ":~# ";
+
+    const commands = [
+        "./start_engine --mode=founder",
+        "loading_weights [██████] 100%",
+        "deploy_agents --scale=global"
+    ];
+
+    // FIX: Always render the full path structure
+    let promptHTML = "";
+    promptHTML += `<span style="color:var(--accent)">${promptUser}</span>`;
+    promptHTML += `<span style="color:#fff">@</span>`;
+    promptHTML += `<span style="color:#4ade80">${promptHost}</span>`;
+    promptHTML += `<span style="color:#fff">${promptSym}</span>`;
+
+    let msgIndex = 0;
+    let charIndex = 0;
+    let isDeleting = false;
+
+    function typeLoop() {
+        const currentCommand = commands[msgIndex];
+        const visibleText = currentCommand.substring(0, charIndex);
+
+        logoEl.innerHTML = `${promptHTML}<span style="color:#e5e5e5">${visibleText}</span>`;
+
+        let typeSpeed = 80;
+        if (isDeleting) {
+            typeSpeed = 40;
+            charIndex--;
+        } else {
+            charIndex++;
+        }
+
+        if (!isDeleting && charIndex === currentCommand.length + 1) {
+            isDeleting = true;
+            typeSpeed = 2500;
+        } else if (isDeleting && charIndex === 0) {
+            isDeleting = false;
+            msgIndex = (msgIndex + 1) % commands.length;
+            typeSpeed = 500;
+        }
+
+        setTimeout(typeLoop, typeSpeed);
+    }
+
+    setTimeout(typeLoop, 1000);
+
+    // --- 2. GENERATE LINKS (Desktop Only) ---
+    const desktopList = document.getElementById('nav-links');
+    if (desktopList) desktopList.innerHTML = '';
+
+    state.nav.links.forEach(link => {
+        const linkHTML = `<a href="#${link.id}" class="nav-link" data-target="${link.id}">./${link.label}</a>`;
+
+        if (desktopList) {
+            const li = document.createElement('li');
+            li.className = 'nav-item';
+            li.innerHTML = linkHTML;
+            desktopList.appendChild(li);
+        }
+    });
+
+    // --- 3. SCROLL LOGIC (Nav Hide & Indicator Hide) ---
+    const scrollHint = document.getElementById('scroll-hint');
+
+    window.addEventListener('scroll', () => {
+        const nav = document.getElementById('main-nav');
+        const currentScrollY = window.scrollY;
+
+        // A. Toggle Navbar Visibility
+        if (currentScrollY > state.nav.lastScrollY && currentScrollY > 100) {
+            nav.classList.add('nav-hidden');
+        } else {
+            nav.classList.remove('nav-hidden');
+        }
+        state.nav.lastScrollY = currentScrollY;
+
+        // B. Toggle Scroll Indicator
+        if (scrollHint) {
+            if (currentScrollY > 100) {
+                scrollHint.classList.add('hidden');
+            } else {
+                scrollHint.classList.remove('hidden');
+            }
+        }
+    });
+
+    // --- 4. DESKTOP SMOOTH SCROLL ---
+    if (desktopList) {
+        desktopList.addEventListener('click', (e) => {
+            if (e.target.classList.contains('nav-link')) {
+                e.preventDefault();
+                const targetId = e.target.getAttribute('data-target');
+                document.getElementById(targetId)
+                    .scrollIntoView({ behavior: 'smooth' });
+            }
+        });
+    }
+}
+
+
+/* =========================================
+   SECTION 1: HERO LOGIC (MODIFIED FOR SEPARATE LOADER)
+   ========================================= */
+
+function initHeroText() {
+    const d = state.data.hero;
+    document.getElementById('hero-role').innerText = d.role;
+    document.getElementById('hero-prefix').innerText = d.headline_prefix;
+    
+    const gradEl = document.getElementById('hero-gradient');
+    gradEl.innerText = d.headline_gradient;
+    gradEl.setAttribute('data-text', d.headline_gradient);
+    
+    document.getElementById('hero-subtitle').innerText = d.subtitle;
+    
+    const stackContainer = document.getElementById('hero-stack');
+    d.tech_stack.forEach(tech => {
+        const span = document.createElement('span');
+        span.className = 'tech-badge';
+        span.innerText = tech;
+        stackContainer.appendChild(span);
+    });
+
+    document.getElementById('stat-sampler').innerText = d.stats.sampler;
+    document.getElementById('stat-steps').innerText = d.stats.steps;
+    document.getElementById('stat-roi').innerText = d.stats.roi;
+}
+
+function initHeroCanvas() {
+    // 1. Get Elements
+    const noiseCanvas = document.getElementById('noise-canvas');
+    const contentCanvas = document.getElementById('content-canvas');
+    const heroSection = document.getElementById('hero-section');
+
+    if(!noiseCanvas || !contentCanvas) return;
+
+    // 2. Setup Contexts
+    state.hero.noiseCtx = noiseCanvas.getContext('2d');
+    state.hero.contentCtx = contentCanvas.getContext('2d');
+    
+    // Image Loading
+    state.hero.img.src = 'images/1_crp.png';
+    state.hero.img.onload = () => createParticles();
+    state.hero.img.onerror = () => {
+        console.warn("Image failed to load. Using fallback particles.");
+        createFallbackParticles();
+    };
+
+    // 3. Resize Handler (Memory Optimized)
+    let lastWidth = 0; 
+
+    function resize() {
+        const newWidth = window.innerWidth;
+        
+        // STOP THE JUMP: Ignore address bar resize on mobile
+        if (newWidth === lastWidth && document.body.clientWidth < 968 && lastWidth !== 0) {
+            return;
+        }
+        
+        lastWidth = newWidth;
+        
+        // Logical size
+        state.hero.width = window.innerWidth;
+        state.hero.height = window.innerHeight;
+        state.hero.isMobile = state.hero.width <= 968;
+        
+        // --- OPTIMIZATION: CAP DPI AT 1.5 ON MOBILE ---
+        // 2x = 4x pixels in memory. 1.5x = 2.25x pixels. 
+        // This saves ~45% memory on the canvas buffer alone.
+        const maxDpr = state.hero.isMobile ? 1.5 : 2;
+        const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
+
+        // Noise Canvas
+        noiseCanvas.width = state.hero.width * dpr;
+        noiseCanvas.height = state.hero.height * dpr;
+        noiseCanvas.style.width = `${state.hero.width}px`;
+        noiseCanvas.style.height = `${state.hero.height}px`;
+        state.hero.noiseCtx.scale(dpr, dpr);
+
+        // Content Canvas
+        const sectionW = heroSection.offsetWidth;
+        const sectionH = heroSection.offsetHeight;
+        contentCanvas.width = sectionW * dpr;
+        contentCanvas.height = sectionH * dpr;
+        contentCanvas.style.width = `${sectionW}px`;
+        contentCanvas.style.height = `${sectionH}px`;
+        state.hero.contentCtx.scale(dpr, dpr);
+
+        // Geometry
+        if (state.hero.isMobile) {
+            state.hero.avatarRadius = Math.min(state.hero.width, state.hero.height) * 0.25; 
+            state.hero.avatarX = state.hero.width / 2;
+            state.hero.avatarY = state.hero.height * 0.3; 
+        } else {
+            state.hero.avatarRadius = Math.min(state.hero.width, state.hero.height) * 0.22;
+            if (state.hero.avatarRadius > 250) state.hero.avatarRadius = 250;
+            state.hero.avatarX = state.hero.width * 0.75; 
+            state.hero.avatarY = state.hero.height / 2;
+        }
+        
+        if(state.hero.isComplete) createParticles(); 
+    }
+    
+    window.addEventListener('resize', resize);
+    resize(); 
+
+    // 4. Auto-Start
+    state.hero.hasTriggered = true; 
+    state.hero.triggerTime = Date.now();
+    state.hero.startTime = Date.now();
+    
+    animateHero();
+
+    heroSection.addEventListener('mousemove', (e) => {
+        if(!state.hero.isComplete) return;
+        const rect = heroSection.getBoundingClientRect();
+        state.hero.mouse.x = e.clientX - rect.left;
+        state.hero.mouse.y = e.clientY - rect.top;
+    });
+}
+
+function createParticles() {
+    state.hero.particles = [];
+    const { width, height, avatarX, avatarY, avatarRadius, img, isMobile } = state.hero;
+    
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCanvas.width = width;
+    tempCanvas.height = height;
+    
+    tempCtx.save();
+    tempCtx.beginPath();
+    tempCtx.arc(avatarX, avatarY, avatarRadius, 0, Math.PI * 2);
+    tempCtx.closePath();
+    tempCtx.clip();
+
+    const aspect = img.width / img.height;
+    let drawW, drawH, drawX, drawY;
+    const boxSize = avatarRadius * 2;
+    
+    if (aspect > 1) {
+        drawH = boxSize;
+        drawW = boxSize * aspect;
+        drawX = avatarX - avatarRadius - ((drawW - boxSize) / 2);
+        drawY = avatarY - avatarRadius;
+    } else {
+        drawW = boxSize;
+        drawH = boxSize / aspect;
+        drawX = avatarX - avatarRadius;
+        drawY = avatarY - avatarRadius - ((drawH - boxSize) / 2);
+    }
+    tempCtx.drawImage(img, drawX, drawY, drawW, drawH);
+    tempCtx.restore();
+
+    const imgData = tempCtx.getImageData(0, 0, width, height).data;
+    
+    // --- OPTIMIZATION 1: DENSITY ---
+    // Use density 2 for EVERYONE. This reduces particle count by ~75% compared to density 1.
+    const density = 2; 
+    
+    const startX = Math.floor(Math.max(0, avatarX - avatarRadius));
+    const endX = Math.floor(Math.min(width, avatarX + avatarRadius));
+    const startY = Math.floor(Math.max(0, avatarY - avatarRadius));
+    const endY = Math.floor(Math.min(height, avatarY + avatarRadius));
+
+    for (let y = startY; y < endY; y += density) {
+        for (let x = startX; x < endX; x += density) {
+            const dx = x - avatarX;
+            const dy = y - avatarY;
+            if (dx*dx + dy*dy > avatarRadius * avatarRadius) continue;
+
+            const index = (y * width + x) * 4;
+            if (imgData[index + 3] > 50) {
+                // --- OPTIMIZATION 2: FILL GAPS ---
+                // Since we skipped pixels (density 2), we make particles bigger.
+                // Mobile gets slightly larger particles to ensure no black gaps appear.
+                const minSize = isMobile ? 1.4 : 1.2;
+                const baseSize = Math.random() * 2.0 + minSize; 
+                
+                state.hero.particles.push({
+                    x: Math.random() * width,
+                    y: Math.random() * height,
+                    targetX: x,
+                    targetY: y,
+                    vx: 0, vy: 0,
+                    color: `rgba(${imgData[index]},${imgData[index+1]},${imgData[index+2]},${imgData[index+3]/255})`,
+                    size: baseSize, 
+                    isImage: true
+                });
+            }
+        }
+    }
+
+    // --- UPDATED BACKGROUND NOISE GENERATION ---
+    // [FIX] Ensure noise particles do not spawn over the image
+    const particleCount = isMobile ? 400 : 1500;
+    const buffer = 15; // Extra space around the circle to keep clean
+
+    for (let i = 0; i < particleCount; i++) {
+        let pX, pY, dist;
+        let safe = false;
+        let attempts = 0;
+
+        // Try to find a safe spot away from the image
+        while (!safe && attempts < 10) {
+            pX = Math.random() * width;
+            pY = Math.random() * height;
+            
+            const dx = pX - avatarX;
+            const dy = pY - avatarY;
+            dist = Math.sqrt(dx*dx + dy*dy);
+            
+            // Only accept if it is OUTSIDE the avatar radius (+ buffer)
+            if (dist > avatarRadius + buffer) {
+                safe = true;
+            }
+            attempts++;
+        }
+
+        // If we found a safe spot (or ran out of attempts), push the particle
+        // Note: targetX/Y are same as x/y so they don't fly across the screen to form the face
+        state.hero.particles.push({
+            x: pX, 
+            y: pY,
+            targetX: pX, 
+            targetY: pY,
+            vx: (Math.random() - 0.5) * 0.5,
+            vy: (Math.random() - 0.5) * 0.5,
+            color: Math.random() > 0.5 ? '#fbbf24' : '#ffffff',
+            size: Math.random() * 1.5 + 0.5,
+            isNoise: true
+        });
+    }
+}
+
+function createFallbackParticles() {
+    const { width, height, avatarX, avatarY, avatarRadius } = state.hero;
+    for(let i=0; i<3000; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const r = Math.sqrt(Math.random()) * avatarRadius;
+        state.hero.particles.push({
+            x: Math.random() * width,
+            y: Math.random() * height,
+            targetX: avatarX + Math.cos(angle) * r, 
+            targetY: avatarY + Math.sin(angle) * r,
+            vx: 0, vy: 0,
+            color: Math.random() > 0.5 ? '#fbbf24' : '#ffffff',
+            size: Math.random() * 2.0,
+            isImage: true
+        });
+    }
+}
+
+function animateHero() {
+    state.hero.rafId = requestAnimationFrame(animateHero);
+
+    const { isGenerating, isComplete, hasTriggered, triggerTime, width, height, avatarX, avatarY, avatarRadius, noiseCtx, contentCtx, particles, mouse } = state.hero;
+
+    // 1. Loading / Diffusion Phase (Happens in #loading-screen)
+    if (isGenerating && hasTriggered) {
+        const now = Date.now();
+        const elapsed = now - triggerTime;
+        let progress = 0;
+
+        if (elapsed <= 2000) progress = (elapsed / 2000) * 0.8;
+        else if (elapsed <= 4000) progress = 0.8 + ((elapsed - 2000) / 2000) * 0.2;
+        else progress = 1.0;
+
+        state.hero.generationProgress = progress;
+
+        // Loader UI Updates
+        const progressBar = document.getElementById('progress');
+        if(progressBar) progressBar.style.width = `${progress * 100}%`;
+
+        const stepCount = document.getElementById('step-count');
+        if(stepCount) stepCount.innerText = Math.floor(progress * 50);
+
+        if (progress > 0.01) {
+            document.getElementById('prompt').classList.add('hidden');
+            document.getElementById('stats').classList.add('visible');
+        }
+
+        // --- COMPLETION TRIGGER ---
+        if (progress >= 1) {
+            state.hero.isGenerating = false;
+            state.hero.isComplete = true;
+
+            // TRANSITION: Hide Loader, Show Website
+            document.getElementById('loading-screen').classList.add('fade-out');
+            document.getElementById('main-website').classList.add('visible');
+
+            // Stop noise canvas clearing/drawing
+            noiseCtx.clearRect(0, 0, width, height);
+
+            // Re-run createParticles so they target the Hero section properly (which is now visible)
+            setTimeout(() => {
+                createParticles();
+            }, 100);
+
+            return; 
+        }
+
+        // Noise Generation (Visuals for Loader)
+        let blockSize = 40 * (1 - progress);
+        if (blockSize < 2) blockSize = 2;
+
+        for (let y = 0; y < height; y += blockSize) {
+            for (let x = 0; x < width; x += blockSize) {
+                const dx = (x + blockSize/2) - avatarX;
+                const dy = (y + blockSize/2) - avatarY;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+
+                const inCircle = dist < avatarRadius + 10;
+                const randomBackground = Math.random() > (0.9 + (progress * 0.1));
+
+                if (inCircle || randomBackground) {
+                    const noiseVal = (1 - progress) * 100;
+                    let r = 20, g = 20, b = 30;
+                    if (inCircle) {
+                        r += (Math.random()) * noiseVal * 2;
+                        g += (Math.random()) * noiseVal * 2;
+                        b += (Math.random()) * noiseVal * 2;
+                    } else {
+                        r = 0; g = 10; b = 20;
+                        r += (Math.random()) * noiseVal * 0.5;
+                        g += (Math.random()) * noiseVal * 0.5;
+                        b += (Math.random()) * noiseVal * 0.5;
+                    }
+                    noiseCtx.fillStyle = `rgb(${r},${g},${b})`;
+                    noiseCtx.fillRect(x, y, blockSize + 1, blockSize + 1);
+                }
+            }
+        }
+    }
+
+    // 2. Main Site Particle Phase (Happens in #hero-section)
+    if (isComplete) {
+        // --- FIX: Use Actual Content Canvas Dimensions for Clearing ---
+        // This prevents "smearing" streaks at the bottom on mobile
+        const actualW = document.getElementById('content-canvas').width;
+        const actualH = document.getElementById('content-canvas').height;
+        contentCtx.clearRect(0, 0, actualW, actualH);
+
+        const speed = mouse.x !== null ? Math.hypot(mouse.x - mouse.lastX, mouse.y - mouse.lastY) : 0;
+
+        particles.forEach(p => {
+            // Physics
+            const dx = p.targetX - p.x;
+            const dy = p.targetY - p.y;
+            p.vx += dx * 0.01;
+            p.vy += dy * 0.01;
+            p.vx *= 0.92;
+            p.vy *= 0.92;
+
+            if (mouse.x !== null) {
+                const mdx = mouse.x - p.x;
+                const mdy = mouse.y - p.y;
+                const dist = Math.sqrt(mdx * mdx + mdy * mdy);
+
+                if (dist < 100 && speed > 1) {
+                    const force = (100 - dist) / 100;
+                    const angle = Math.atan2(mdy, mdx);
+                    p.vx -= Math.cos(angle) * force * speed * 0.3;
+                    p.vy -= Math.sin(angle) * force * speed * 0.3;
+                }
+            }
+
+            if (p.isNoise) {
+                p.x += p.vx + Math.sin(Date.now() * 0.001 + p.y) * 0.3;
+            } else {
+                p.x += p.vx;
+            }
+            p.y += p.vy;
+
+            // Draw
+            contentCtx.beginPath();
+            contentCtx.fillStyle = p.color;
+            contentCtx.globalAlpha = p.isNoise ? 0.4 : 1.0;
+            contentCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            contentCtx.fill();
+        });
+
+        contentCtx.globalAlpha = 1;
+        state.hero.mouse.lastX = state.hero.mouse.x;
+        state.hero.mouse.lastY = state.hero.mouse.y;
+    }
+}
+
+
+
+
+/* =========================================
+   SECTION 2: MODEL CARD LOGIC
+   ========================================= */
+
+function initModelCard() {
+    const d = state.data.about;
+    if(!d) return;
+
+    // 1. Populate Profile Text
+    document.getElementById('model-name').innerText = d.profile.name;
+    document.getElementById('model-title').innerText = d.profile.title;
+    document.getElementById('model-desc').innerHTML = d.profile.description;
+
+    const badgeContainer = document.getElementById('model-badges');
+    badgeContainer.innerHTML = '';
+    
+    // Add Role Badges
+    d.profile.roles.forEach(role => {
+        const span = document.createElement('span');
+        span.className = 'badge';
+        span.innerText = role;
+        badgeContainer.appendChild(span);
+    });
+    
+    // Add Link Badge
+    const link = document.createElement('a');
+    link.href = d.profile.link_url;
+    link.target = '_blank';
+    link.style.textDecoration = 'none';
+    link.innerHTML = `<span class="badge outline" style="cursor: pointer;">${d.profile.link_text}</span>`;
+    badgeContainer.appendChild(link);
+
+    // 2. Build Heatmap
+    const grid = document.getElementById('attention-map');
+    const readout = document.getElementById('skill-readout');
+    grid.innerHTML = ''; // Clear existing
+    state.modelCard.cells = [];
+
+    d.skills.forEach(skill => {
+        const cell = document.createElement('div');
+        cell.className = 'heat-cell';
+        const opacity = 0.3 + (skill.weight * 0.7);
+        cell.style.backgroundColor = `rgba(251, 191, 36, ${opacity})`;
+        cell.style.setProperty('--opacity', skill.weight);
+
+        cell.addEventListener('mouseenter', () => {
+            readout.innerHTML = `
+                <span class="skill-name">${skill.name.toUpperCase()}</span>
+                <span class="skill-score">[CONFIDENCE: ${(skill.weight * 100).toFixed(0)}%]</span>
+            `;
+            cell.style.borderColor = '#fff';
+            cell.style.transform = 'scale(1.2)';
+            cell.style.zIndex = '10';
+            cell.style.boxShadow = '0 0 15px var(--accent)';
+        });
+
+        cell.addEventListener('mouseleave', () => {
+            readout.innerHTML = `<span class="prompt-blink">[ WAITING FOR INPUT ]</span>`;
+            cell.style.borderColor = '';
+            cell.style.transform = '';
+            cell.style.zIndex = '';
+            cell.style.boxShadow = '';
+        });
+
+        grid.appendChild(cell);
+        state.modelCard.cells.push(cell);
+    });
+
+    // 3. Prepare JSON String for Typewriter
+    // Dynamic Age Logic
+    const birthDate = new Date(d.birth_date);
+    const now = new Date();
+    let age = now.getFullYear() - birthDate.getFullYear();
+    if (now.getMonth() < birthDate.getMonth() || (now.getMonth() === birthDate.getMonth() && now.getDate() < birthDate.getDate())) {
+        age--;
+    }
+    const version = `v${age}.${now.getMonth() + 1}`;
+
+    // Construct the object to display
+    const configObj = {
+        "model_name": `Naveen_LLM_${version}`,
+        ...d.config_display,
+        "training_time": "CALCULATING_EPOCHS..." 
+    };
+    
+    state.modelCard.jsonString = JSON.stringify(configObj, null, 4);
+    
+    // Start radar scan loop immediately (it's passive)
+    startRadarScan();
+}
+
+function startRadarScan() {
+    if(state.modelCard.scanInterval) clearInterval(state.modelCard.scanInterval);
+    
+    function scan() {
+        if(state.modelCard.cells.length === 0) return;
+        const count = 3;
+        for(let i=0; i<count; i++) {
+            setTimeout(() => {
+                const idx = Math.floor(Math.random() * state.modelCard.cells.length);
+                const cell = state.modelCard.cells[idx];
+                if(cell) {
+                    cell.classList.add('scanning');
+                    setTimeout(() => cell.classList.remove('scanning'), 600);
+                }
+            }, i * 100);
+        }
+        state.modelCard.scanInterval = setTimeout(scan, Math.random() * 3000 + 3000);
+    }
+    scan();
+}
+
+// --- ANIMATION CONTROLLERS ---
+
+function startModelCardAnimation() {
+    if(state.modelCard.isStreaming) return; // Already running
+    state.modelCard.isStreaming = true;
+    
+    // Reveal Visual Blocks Staggered
+    const blocks = ['block-profile', 'block-heatmap', 'block-pipeline'];
+    blocks.forEach((id, idx) => {
+        const el = document.getElementById(id);
+        if(el) {
+            setTimeout(() => el.classList.add('visible'), idx * 200);
+        }
+    });
+
+    // Start Typewriter
+    typeWriterLoop();
+}
+
+function resetModelCardAnimation() {
+    state.modelCard.isStreaming = false;
+    state.modelCard.charIndex = 0;
+    
+    // Clear Code View
+    document.getElementById('json-stream').innerHTML = '';
+    document.getElementById('line-numbers').innerHTML = '';
+    document.getElementById('cursor').style.display = 'inline-block';
+    
+    // Stop Live Timer if running
+    if(state.modelCard.timerInterval) clearInterval(state.modelCard.timerInterval);
+
+    // Hide Visual Blocks
+    const blocks = ['block-profile', 'block-heatmap', 'block-pipeline'];
+    blocks.forEach(id => {
+        const el = document.getElementById(id);
+        if(el) el.classList.remove('visible');
+    });
+}
+
+function typeWriterLoop() {
+    if (!state.modelCard.isStreaming) return; // Stop if user scrolled away
+
+    const { jsonString, charIndex } = state.modelCard;
+    const codeEl = document.getElementById('json-stream');
+    const lineEl = document.getElementById('line-numbers');
+
+    if (charIndex < jsonString.length) {
+        const chunkSize = Math.floor(Math.random() * 4) + 1; // Random typing speed
+        const currentText = jsonString.substring(0, charIndex + chunkSize);
+        
+        // Colorize syntax
+        codeEl.innerHTML = currentText.replace(/"([^"]+)":|("[^"]+")/g, (match, key, str) => {
+            if (key) return `<span class="key">"${key}"</span>:`;
+            if (str) return `<span class="string">${str}</span>`;
+            return match;
+        })
+        .replace(/\b(\d+\.?\d*)\b/g, '<span class="number">$1</span>')
+        .replace(/[\[\]\{\}]/g, '<span class="bracket">$&</span>');
+
+        // Update Line Numbers
+        const lines = currentText.split('\n').length;
+        lineEl.innerHTML = Array(lines).fill(0).map((_, i) => i + 1).join('<br>');
+        
+        state.modelCard.charIndex += chunkSize;
+        
+        // Auto Scroll
+        const container = document.querySelector('.code-content');
+        if(container) container.scrollTop = container.scrollHeight;
+
+        setTimeout(typeWriterLoop, 10);
+    } else {
+        // Finished Typing -> Start Live Timer
+        document.getElementById('cursor').style.display = 'none'; // hide cursor or keep blinking
+        startLiveTimer();
+    }
+}
+
+function startLiveTimer() {
+    const birthDate = new Date(state.data.about.birth_date);
+    
+    // Find the specific span in the generated HTML
+    const spans = document.querySelectorAll('#json-stream .string');
+    let targetSpan = null;
+    spans.forEach(span => {
+        if (span.innerText.includes("CALCULATING_EPOCHS")) targetSpan = span;
+    });
+
+    if(targetSpan) {
+        state.modelCard.timerInterval = setInterval(() => {
+            if(!state.modelCard.isStreaming) return;
+            const now = new Date();
+            const diff = Math.floor((now - birthDate) / 1000).toLocaleString();
+            targetSpan.innerHTML = `"${diff}s <span style='color:var(--accent)'>(LIVE)</span>"`;
+        }, 1000);
+    }
+}
+
+
+
+/* =========================================
+   SECTION 3: TRAINING DASHBOARD LOGIC (UPDATED)
+   ========================================= */
+
+// Logical dimensions for the graph (Scales via CSS automatically)
+const GRAPH_LOGIC_WIDTH = 800;
+const GRAPH_LOGIC_HEIGHT = 400;
+const GRAPH_PADDING_BOTTOM = 40;
+
+function initTrainingSection() {
+    if(!state.data || !state.data.education) return;
+    
+    // 1. Build Terminal Rows
+    const container = document.getElementById('terminal-rows');
+    container.innerHTML = '';
+    state.data.education.epochs.forEach(epoch => {
+        const row = document.createElement('div');
+        row.className = 'epoch-row'; 
+        
+        let descHTML = `<p class="description">${epoch.desc}</p>`;
+        if(epoch.active) {
+            descHTML = `<p class="description"><span class="status-blink">>> FINE_TUNING...</span> ${epoch.desc.replace('>> FINE_TUNING... ', '')}</p>`;
+        }
+
+        row.innerHTML = `
+            <div class="epoch-label">EPOCH ${epoch.id} [${epoch.label}]</div>
+            <div class="progress-track">
+                <div class="progress-fill ${epoch.active ? 'striped' : ''}"></div>
+            </div>
+            <div class="metrics">loss: <span class="val loss-val">${epoch.loss}</span> acc: <span class="val acc-val">${epoch.acc}</span></div>
+            <div class="log-details">
+                <h4 class="degree-name">${epoch.degree}</h4>
+                <span class="year">${epoch.year}</span>
+                ${descHTML}
+            </div>
+        `;
+        container.appendChild(row);
+    });
+
+    // 2. Prepare Graph Data
+    // We generate the shape ONCE so the "noise" doesn't jitter on resize
+    state.training.zones = state.data.education.graph_zones;
+    generateBaseData(); 
+
+    // 3. Initial Render
+    renderTrainingGraph();
+    
+    // NOTE: Resize listener removed to prevent graph disappearing.
+    // The SVG viewBox handles scaling automatically.
+}
+
+// --- MATH & DATA GENERATION ---
+// --- 1. UPDATED CURVE GENERATION (Organic Accuracy) ---
+function generateBaseData() {
+    state.training.baseData = [];
+    const zones = state.training.zones;
+    const totalZones = zones.length;
+    const zoneWidth = GRAPH_LOGIC_WIDTH / totalZones;
+    const stepsPerZone = 12; 
+
+    zones.forEach((zone, zIndex) => {
+        for (let i = 0; i < stepsPerZone; i++) {
+            // X Position
+            const zoneStartX = zIndex * zoneWidth;
+            const relativeX = (i / stepsPerZone) * zoneWidth;
+            const x = zoneStartX + relativeX;
+
+            // Y Calculation
+            const progress = i / stepsPerZone;
+            
+            // MATH MAGIC: Create a "Logarithmic" rise (Fast start, slow finish)
+            // We invert the loss (1 - loss) but apply a power curve to smooth it out
+            let rawLoss = zone.startLoss - ((zone.startLoss - zone.endLoss) * progress);
+            
+            // "1.0 - rawLoss" creates the upward trend
+            let baseAcc = 1.0 - rawLoss;
+
+            // Add "Learning Volatility" (The struggle)
+            // We use sin() for waves and random() for jagged noise
+            const volatility = zone.volatility || 0.05;
+            const sineWave = Math.sin(progress * Math.PI * 3) * (volatility * 0.5); 
+            const microNoise = (Math.random() - 0.5) * (volatility * 0.8);
+            
+            // Combine: Base + Wave + Noise
+            let finalAcc = baseAcc + sineWave + microNoise;
+
+            // Clamp results between 5% and 99% so it never touches the absolute edge
+            finalAcc = Math.max(0.05, Math.min(0.99, finalAcc));
+
+            state.training.baseData.push({
+                x: x,
+                // SVG Y-Axis: 0 is Top (100% Acc), Height is Bottom (0% Acc)
+                y: (1 - finalAcc) * GRAPH_LOGIC_HEIGHT, 
+                acc: finalAcc,
+                zone: zone
+            });
+        }
+    });
+    
+    // Smoothly connect the final point
+    const lastZone = zones[zones.length-1];
+    const finalAcc = 1.0 - lastZone.endLoss;
+    
+    state.training.baseData.push({
+        x: GRAPH_LOGIC_WIDTH, 
+        y: (1 - finalAcc) * GRAPH_LOGIC_HEIGHT, 
+        acc: finalAcc,
+        zone: lastZone
+    });
+}
+
+// --- 2. UPDATED RENDERER (Cleaner Gradient) ---
+// --- UPDATED RENDERER (Clean, Dark Aesthetic) ---
+function renderTrainingGraph() {
+    const container = document.getElementById('lossChartContainer');
+    const svgLayer = document.getElementById('svg-layer');
+    if(!container || !svgLayer) return;
+
+    const data = state.training.baseData;
+    const zones = state.training.zones;
+    const internalHeight = GRAPH_LOGIC_HEIGHT + GRAPH_PADDING_BOTTOM;
+
+    // [AESTHETIC FIX] 
+    // 1. Reduced start opacity to 0.15 (Subtle)
+    // 2. Changed fade-out point (offset) to 70% so it disappears before hitting the bottom
+    const defs = `
+    <defs>
+        <linearGradient id="gradientFill" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#fbbf24" stop-opacity="0.15"/> 
+            <stop offset="70%" stop-color="#fbbf24" stop-opacity="0"/>
+        </linearGradient>
+        <filter id="glow-shadow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+            <feMerge>
+                <feMergeNode in="coloredBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        </filter>
+    </defs>`;
+
+    // Build SVG String
+    let svgHTML = `<svg viewBox="0 0 ${GRAPH_LOGIC_WIDTH} ${internalHeight}" preserveAspectRatio="none" style="width:100%; height:100%; display:block;">${defs}`;
+    
+    // Render Grid Lines (Made more subtle)
+    const zoneWidth = GRAPH_LOGIC_WIDTH / zones.length;
+    zones.forEach((zone, index) => {
+        const xPos = index * zoneWidth;
+        svgHTML += `<line x1="${xPos}" y1="0" x2="${xPos}" y2="${GRAPH_LOGIC_HEIGHT}" class="grid-line" opacity="0.05" />`;
+        svgHTML += `<text x="${xPos + (zoneWidth/2)}" y="${GRAPH_LOGIC_HEIGHT + 25}" class="axis-label" fill="#555" font-size="12" text-anchor="middle" font-family="monospace" font-weight="bold">${zone.label}</text>`;
+    });
+
+    // Generate Smooth Path
+    let pathD = `M ${data[0].x},${data[0].y} `;
+    for(let i = 1; i < data.length; i++) {
+        const cp1x = data[i-1].x + (data[i].x - data[i-1].x) / 2;
+        pathD += `C ${cp1x},${data[i-1].y} ${cp1x},${data[i].y} ${data[i].x},${data[i].y} `;
+    }
+
+    const areaD = pathD + `L ${GRAPH_LOGIC_WIDTH},${GRAPH_LOGIC_HEIGHT} L 0,${GRAPH_LOGIC_HEIGHT} Z`;
+
+    // Append Paths
+    // Added 'filter="url(#glow-shadow)"' to the line for extra neon pop
+    svgHTML += `<path d="${areaD}" class="area-fill" id="graph-area" fill="url(#gradientFill)" opacity="0" />`;
+    svgHTML += `<path d="${pathD}" class="graph-line" id="graph-stroke" fill="none" stroke="#fbbf24" stroke-width="3" filter="url(#glow-shadow)" stroke-dasharray="2000" stroke-dashoffset="2000" />`;
+    svgHTML += `</svg>`;
+
+    svgLayer.innerHTML = svgHTML;
+
+    setupGraphInteraction(container, data);
+}
+
+function setupGraphInteraction(container, data) {
+    const tooltip = document.getElementById('tooltip');
+    const cursorLine = document.getElementById('cursor-line');
+    const cursorDot = document.getElementById('cursor-dot');
+    const hoverHint = document.getElementById('hover-hint');
+    const ttGained = document.getElementById('tt-gained');
+    const ttLost = document.getElementById('tt-lost');
+
+    // Remove old listeners to prevent stacking
+    container.onmousemove = null;
+    container.onmouseleave = null;
+
+    container.onmousemove = (e) => {
+        if(hoverHint) hoverHint.classList.add('hidden');
+
+        const rect = container.getBoundingClientRect();
+        const relX = e.clientX - rect.left;
+
+        // 1. Move Cursor Line
+        cursorLine.style.display = 'block';
+        cursorLine.style.left = `${relX}px`;
+
+        // 2. Map pixel X to Logical SVG X
+        const svgX = (relX / rect.width) * GRAPH_LOGIC_WIDTH;
+
+        // 3. Find closest data point
+        const closest = data.reduce((prev, curr) => 
+            Math.abs(curr.x - svgX) < Math.abs(prev.x - svgX) ? curr : prev
+        );
+
+        if (closest) {
+            // 4. Map Logical Y back to Pixel Y
+            const internalHeight = GRAPH_LOGIC_HEIGHT + GRAPH_PADDING_BOTTOM;
+            const pixelY = (closest.y / internalHeight) * rect.height;
+
+            cursorDot.style.display = 'block';
+            cursorDot.style.left = `${relX}px`;
+            cursorDot.style.top = `${pixelY}px`;
+
+            // 5. Update Tooltip Data (UPDATED FOR ACCURACY)
+            // Shows "ACC: 0.954" instead of "LOSS: 0.046"
+            const accPercentage = (closest.acc * 100).toFixed(1) + '%';
+            tooltip.querySelector('.tt-header').innerHTML = `${closest.zone.label} <span style="float:right; opacity:0.8; color:#4ade80">ACC: ${accPercentage}</span>`;
+            
+            ttGained.innerText = closest.zone.gained;
+            ttLost.innerText = closest.zone.lost;
+
+            // 6. Tooltip Positioning (Full Smart Clamp Logic)
+            const tooltipWidth = tooltip.offsetWidth || 240;
+            const tooltipHeight = tooltip.offsetHeight || 120;
+            
+            // Horizontal
+            let ttX = relX + 20; 
+            if (ttX + tooltipWidth > rect.width) ttX = relX - tooltipWidth - 20;
+            if (ttX < 0) ttX = 10; 
+
+            // Vertical
+            let ttTop = pixelY - tooltipHeight - 20;
+            if (ttTop < 0) ttTop = pixelY + 20;
+            if (ttTop + tooltipHeight > rect.height) ttTop = rect.height - tooltipHeight - 10;
+            if (ttTop < 0) ttTop = 10;
+
+            tooltip.style.left = `${ttX}px`;
+            tooltip.style.top = `${ttTop}px`;
+            tooltip.style.opacity = 1;
+        }
+    };
+
+    container.onmouseleave = () => {
+        cursorLine.style.display = 'none';
+        cursorDot.style.display = 'none';
+        tooltip.style.opacity = 0;
+    };
+}
+
+// --- ANIMATION CONTROLLERS ---
+
+function startTrainingAnimation() {
+    // 1. Terminal Rows
+    const rows = document.querySelectorAll('.epoch-row');
+    rows.forEach((row, i) => {
+        setTimeout(() => {
+            row.classList.add('active');
+            const fill = row.querySelector('.progress-fill');
+            if(fill) fill.style.width = '100%';
+        }, i * 200);
+    });
+
+    // 2. Graph Drawing (CSS Animation Trigger)
+    const stroke = document.getElementById('graph-stroke');
+    const area = document.getElementById('graph-area');
+    if(stroke && area) {
+        stroke.classList.remove('animate');
+        area.classList.remove('animate');
+        void stroke.offsetWidth; // Trigger Reflow
+        stroke.classList.add('animate');
+        area.classList.add('animate');
+    }
+}
+
+function resetTrainingAnimation() {
+    // 1. Reset Rows
+    const rows = document.querySelectorAll('.epoch-row');
+    rows.forEach(row => {
+        row.classList.remove('active');
+        const fill = row.querySelector('.progress-fill');
+        if(fill) fill.style.width = '0%';
+    });
+
+    // 2. Reset Graph
+    const stroke = document.getElementById('graph-stroke');
+    const area = document.getElementById('graph-area');
+    if(stroke && area) {
+        stroke.classList.remove('animate');
+        area.classList.remove('animate');
+    }
+}
+
+
+/* =========================================
+   SECTION 4: NEURAL PROJECTS LOGIC
+   ========================================= */
+
+function initNeuralSection() {
+    if(!state.data.neural) return;
+    const { layers, agents } = state.data.neural;
+    const container = document.getElementById('neural-cols');
+    container.innerHTML = '';
+
+    // 1. Build Tech Layers
+    layers.forEach((layer, index) => {
+        const col = document.createElement('div');
+        col.className = `layer-col delay-${index+1}`;
+        
+        // Header
+        const header = document.createElement('div');
+        header.className = 'col-header';
+        header.innerText = layer.title;
+        col.appendChild(header);
+
+        // Nodes
+        layer.nodes.forEach(node => {
+            const el = document.createElement('div');
+            el.className = 'tech-node';
+            el.dataset.id = node.id;
+            el.innerText = node.label;
+            col.appendChild(el);
+        });
+
+        container.appendChild(col);
+    });
+
+    // 2. Build Agent Layer (The Last Column)
+    const agentCol = document.createElement('div');
+    agentCol.className = `layer-col project-col delay-${layers.length + 1}`;
+    
+    const agentHeader = document.createElement('div');
+    agentHeader.className = 'col-header';
+    agentHeader.innerText = "OUTPUT LAYER";
+    agentCol.appendChild(agentHeader);
+
+    agents.forEach(agent => {
+        const card = document.createElement('div');
+        card.className = 'agent-card';
+        if(agent.hasHint) card.classList.add('ux-hint-pulse');
+        card.id = agent.id;
+        
+        // Hint Bubble
+        let hintHTML = agent.hasHint ? `<div class="ux-hint-bubble">CLICK TO TRACE</div>` : '';
+        
+        card.innerHTML = `
+            ${hintHTML}
+            <div class="agent-header">
+                <span class="agent-badge">${agent.badge}</span>
+                <div class="status-dot"></div>
+            </div>
+            <h3>${agent.name}</h3>
+            <p>${agent.desc}</p>
+            <a href="${agent.link}" target="_blank" class="agent-link" onclick="event.stopPropagation()">
+                > LAUNCH_SYSTEM ↗
+            </a>
+        `;
+
+        // Click Handler (Dynamic)
+        card.addEventListener('click', () => {
+            handleAgentClick(agent.id, agent.path);
+        });
+
+        agentCol.appendChild(card);
+    });
+
+    container.appendChild(agentCol);
+
+    // 3. Initialize Drawing Logic
+    // We wait a moment for DOM layout, but actual drawing happens in the Observer/Resize logic
+    state.neural.resizeObserver = new ResizeObserver(() => {
+        requestAnimationFrame(drawNeuralConnections);
+    });
+    state.neural.resizeObserver.observe(document.getElementById('graph-wrapper'));
+}
+
+// --- DRAWING LOGIC ---
+
+function getRelCenter(el, wrapper) {
+    const rect = el.getBoundingClientRect();
+    const wrapRect = wrapper.getBoundingClientRect();
+    return {
+        x: rect.left - wrapRect.left + rect.width / 2,
+        y: rect.top - wrapRect.top + rect.height / 2
+    };
+}
+
+function drawNeuralConnections() {
+    const svg = document.getElementById('project-connections');
+    const wrapper = document.getElementById('graph-wrapper');
+    if(!svg || !wrapper) return;
+
+    // Reset
+    svg.innerHTML = '';
+    state.neural.archLines = [];
+
+    const cols = document.querySelectorAll('.layer-col');
+    if(cols.length === 0) return;
+
+    // Sync SVG size
+    const svgRect = wrapper.getBoundingClientRect();
+    svg.setAttribute('width', svgRect.width);
+    svg.setAttribute('height', svgRect.height);
+
+    // Connect sequential layers
+    for(let i = 0; i < cols.length - 1; i++) {
+        const currentNodes = cols[i].querySelectorAll('.tech-node, .agent-card');
+        const nextNodes = cols[i+1].querySelectorAll('.tech-node, .agent-card');
+
+        currentNodes.forEach(startEl => {
+            nextNodes.forEach(endEl => {
+                // Only draw if elements have dimension (are visible)
+                if(startEl.offsetWidth > 0 && endEl.offsetWidth > 0) {
+                    createArchLine(startEl, endEl, svg, wrapper);
+                }
+            });
+        });
+    }
+
+    // Re-highlight if an agent is active
+    if(state.neural.activeAgentId) {
+        const agent = state.data.neural.agents.find(a => a.id === state.neural.activeAgentId);
+        if(agent) activatePathVisuals(agent.id, agent.path);
+    }
+}
+
+function createArchLine(startEl, endEl, svg, wrapper) {
+    const start = getRelCenter(startEl, wrapper);
+    const end = getRelCenter(endEl, wrapper);
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    let d = '';
+
+    if(window.innerWidth > 768) {
+        // Desktop: Curvy Bezier
+        const dx = end.x - start.x;
+        const cp1 = { x: start.x + dx * 0.5, y: start.y };
+        const cp2 = { x: end.x - dx * 0.5, y: end.y };
+        d = `M ${start.x} ${start.y} C ${cp1.x} ${cp1.y} ${cp2.x} ${cp2.y} ${end.x} ${end.y}`;
+    } else {
+        // Mobile: S-Curve vertical
+        const midY = (start.y + end.y) / 2;
+        d = `M ${start.x} ${start.y} Q ${start.x} ${midY} ${(start.x + end.x)/2} ${midY} T ${end.x} ${end.y}`;
+    }
+
+    path.setAttribute('d', d);
+    path.setAttribute('class', 'arch-line');
+    
+    // Store IDs for activation logic
+    const u1 = startEl.dataset.id || startEl.id;
+    const u2 = endEl.dataset.id || endEl.id;
+    
+    svg.appendChild(path);
+    state.neural.archLines.push({ el: path, u1, u2 });
+}
+
+// --- INTERACTION LOGIC ---
+
+function handleAgentClick(agentId, pathIds) {
+    // Remove hints on first click
+    if (state.neural.isFirstClick) {
+        const hint = document.querySelector('.ux-hint-bubble');
+        const pulser = document.querySelector('.ux-hint-pulse');
+        if(hint) hint.remove();
+        if(pulser) pulser.classList.remove('ux-hint-pulse');
+        state.neural.isFirstClick = false;
+    }
+
+    state.neural.activeAgentId = agentId;
+    activatePathVisuals(agentId, pathIds);
+}
+
+function activatePathVisuals(agentId, pathIds) {
+    // Reset classes
+    document.querySelectorAll('.active-node').forEach(el => el.classList.remove('active-node'));
+    document.querySelectorAll('.active-card').forEach(el => el.classList.remove('active-card'));
+    document.querySelectorAll('.active-line').forEach(el => el.classList.remove('active-line'));
+
+    // Highlight Agent
+    document.getElementById(agentId).classList.add('active-card');
+
+    // Highlight Nodes
+    pathIds.forEach(id => {
+        const node = document.querySelector(`[data-id="${id}"]`);
+        if(node) node.classList.add('active-node');
+    });
+
+    // Highlight Lines (Check if line connects two active items)
+    const activeSet = new Set([...pathIds, agentId]);
+    const svg = document.getElementById('project-connections');
+
+    state.neural.archLines.forEach(lineObj => {
+        if(activeSet.has(lineObj.u1) && activeSet.has(lineObj.u2)) {
+            lineObj.el.classList.add('active-line');
+            // Move to end of SVG to draw on top
+            svg.appendChild(lineObj.el);
+        }
+    });
+}
+
+// --- ANIMATION CONTROLLERS ---
+
+function startNeuralAnimation() {
+    document.getElementById('neural-header').classList.add('visible');
+    const cols = document.querySelectorAll('.layer-col');
+    cols.forEach(col => col.classList.add('visible'));
+    
+    // Force redraw to ensure lines match new positions
+    setTimeout(drawNeuralConnections, 500); 
+}
+
+function resetNeuralAnimation() {
+    document.getElementById('neural-header').classList.remove('visible');
+    const cols = document.querySelectorAll('.layer-col');
+    cols.forEach(col => col.classList.remove('visible'));
+    // We don't clear active selection, but we hide the columns
+}
+
+
+/* =========================================
+   SECTION 5: CONTACT IDE LOGIC
+   ========================================= */
+
+function initContactSection() {
+    if(!state.data.contact) return;
+    const d = state.data.contact;
+
+    // 1. Set Placeholders & Filenames
+    document.getElementById('file-name-display').innerText = d.filename;
+    document.getElementById('tab-name-display').innerText = d.filename;
+    
+    document.getElementById('in-name').placeholder = d.placeholders.name;
+    document.getElementById('in-email').placeholder = d.placeholders.email;
+    document.getElementById('in-message').placeholder = d.placeholders.message;
+
+    // 2. Build Sidebar (Network Interfaces)
+    const netContainer = document.getElementById('network-interfaces');
+    netContainer.innerHTML = '';
+    
+    // -- UPDATED SECTION START --
+    // Email 1: Personal
+    createNetItem(netContainer, 'PERSONAL_SMTP_UPLINK', d.email, 'green', () => copyToClip(d.email));
+    
+    // Email 2: Organization (NEW)
+    // We use 'green' again to show it is also Active/Online
+    if(d.email_org) {
+        createNetItem(netContainer, 'ORGANIZATION_SMTP_UPLINK', d.email_org, 'green', () => copyToClip(d.email_org));
+    }
+    // -- UPDATED SECTION END --
+
+    createNetItem(netContainer, 'VOICE_GATEWAY', d.phone, 'yellow', () => copyToClip(d.phone));
+    createNetItem(netContainer, 'GEO_LOCATION', d.location, 'blue', null);
+
+    // 3. Build Sidebar (Git Remotes)
+    const gitContainer = document.getElementById('git-remotes');
+    gitContainer.innerHTML = '';
+    d.socials.forEach(social => {
+        const link = document.createElement('a');
+        link.href = social.link;
+        link.target = '_blank';
+        link.className = 'git-item';
+        link.innerHTML = `<span class="branch-icon">${social.icon}</span> ${social.label}`;
+        gitContainer.appendChild(link);
+    });
+
+    // 4. Bind Input Events (Live Preview + Remove Error Glow)
+    const inputs = ['in-name', 'in-email', 'in-intent', 'in-message'];
+    inputs.forEach(id => {
+        const el = document.getElementById(id);
+        el.addEventListener('input', () => {
+            updateCodePreview();
+            el.classList.remove('input-error'); // Remove red glow on typing
+        });
+    });
+    
+    // 5. Bind Run Button
+    document.getElementById('run-script-btn').addEventListener('click', runContactScript);
+}
+
+function createNetItem(container, label, value, color, clickHandler) {
+    const item = document.createElement('div');
+    item.className = clickHandler ? 'net-interface' : 'net-interface no-hover';
+    if(clickHandler) item.onclick = clickHandler;
+    
+    item.innerHTML = `
+        <div class="net-status"><span class="led ${color}"></span> ${label}</div>
+        <div class="net-value">${value}</div>
+        ${clickHandler ? '<div class="net-copy">:: CLICK_TO_COPY</div>' : ''}
+    `;
+    container.appendChild(item);
+}
+
+function updateCodePreview() {
+    const name = document.getElementById('in-name').value || "None";
+    const email = document.getElementById('in-email').value || "None";
+    const intent = document.getElementById('in-intent').value;
+    const message = document.getElementById('in-message').value || "(Waiting for input...)";
+
+    document.getElementById('code-name').innerText = `"${name}"`;
+    document.getElementById('code-email').innerText = `"${email}"`;
+    document.getElementById('code-intent').innerText = `af.Intent.${intent}`;
+    
+    // Preserve newlines in message
+    document.getElementById('code-message').innerText = `"""\n        ${message}\n        """`;
+}
+
+function copyToClip(text) {
+    navigator.clipboard.writeText(text);
+    const term = document.getElementById('terminal-output');
+    // Simulate system log in terminal
+    term.innerHTML += `<br><span class="log-msg">> Copied to buffer: "${text}"</span>`;
+    term.scrollTop = term.scrollHeight;
+}
+
+
+
+// --- ANIMATION CONTROLLERS ---
+
+function startContactAnimation() {
+    document.getElementById('ide-container').classList.add('visible');
+}
+
+function resetContactAnimation() {
+    document.getElementById('ide-container').classList.remove('visible');
+    
+    // Reset Terminal Text to keep it fresh
+    const term = document.getElementById('terminal-output');
+    if(term) term.innerHTML = state.contact.defaultPrompt;
+    
+    // Reset Button state if user scrolled away mid-run
+    state.contact.isRunning = false;
+    const btn = document.getElementById('run-script-btn');
+    if(btn) {
+        btn.style.background = '#4ade80';
+        btn.innerHTML = '<span class="play-icon">▶</span> RUN SCRIPT';
+    }
+}
+
+/* =========================================
+   FOOTER LOGIC (RESEARCH PAPER)
+   ========================================= */
+function initFooter() {
+    if(!state.data || !state.data.footer) return;
+    const d = state.data.footer;
+
+    // 1. Static Text
+    document.getElementById('f-title').innerText = d.title;
+    document.getElementById('f-abstract').innerText = d.abstract;
+    document.getElementById('f-meta').innerText = d.meta;
+    document.getElementById('f-bibtex').innerText = d.bibtex;
+
+    // 2. References List (Internal)
+    const refContainer = document.getElementById('f-references');
+    refContainer.innerHTML = '';
+    d.references.forEach(ref => {
+        const li = document.createElement('li');
+        li.className = 'ref-item';
+        li.innerHTML = `<span class="ref-id">${ref.id}</span> <a href="${ref.url}" class="ref-link">${ref.label}</a>`;
+        refContainer.appendChild(li);
+    });
+
+    // 3. Connect List (External)
+    const connContainer = document.getElementById('f-connect');
+    connContainer.innerHTML = '';
+    d.connect.forEach(conn => {
+        const li = document.createElement('li');
+        li.className = 'ref-item';
+        li.innerHTML = `<span class="ref-id">${conn.id}</span> <a href="${conn.url}" target="_blank" class="ref-link">${conn.label}</a>`;
+        connContainer.appendChild(li);
+    });
+
+    // 4. Copy Interaction
+    const btn = document.getElementById('copy-bib-btn');
+    btn.addEventListener('click', () => {
+        navigator.clipboard.writeText(d.bibtex);
+        btn.innerText = "COPIED";
+        setTimeout(() => btn.innerText = "COPY", 2000);
+    });
+}
+
+
+/* =========================================
+   NEW LOGIC: VALIDATION & EMAILJS
+   ========================================= */
+
+function validateInputs(name, email, message) {
+    const term = document.getElementById('terminal-output');
+    
+    // Get Elements
+    const nameEl = document.getElementById('in-name');
+    const emailEl = document.getElementById('in-email');
+    const msgEl = document.getElementById('in-message');
+    
+    // Reset previous errors
+    nameEl.classList.remove('input-error');
+    emailEl.classList.remove('input-error');
+    msgEl.classList.remove('input-error');
+
+    let isValid = true;
+    let errorLog = "";
+
+    // 1. Check Name
+    if (!name) {
+        nameEl.classList.add('input-error');
+        errorLog += `<br><span class="loss-val">> ERROR: Name field cannot be NoneType.</span>`;
+        isValid = false;
+    }
+
+    // 2. Check Email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email) {
+        emailEl.classList.add('input-error');
+        errorLog += `<br><span class="loss-val">> ERROR: Email address required for handshake.</span>`;
+        isValid = false;
+    } else if (!emailRegex.test(email)) {
+        emailEl.classList.add('input-error');
+        errorLog += `<br><span class="loss-val">> ERROR: ValueError: Invalid email format "${email}".</span>`;
+        isValid = false;
+    }
+
+    // 3. Check Message
+    if (!message) {
+        msgEl.classList.add('input-error');
+        errorLog += `<br><span class="loss-val">> ERROR: Empty payload. Message body missing.</span>`;
+        isValid = false;
+    }
+
+    if (!isValid) {
+        term.innerHTML += errorLog;
+        term.scrollTop = term.scrollHeight;
+    }
+
+    return isValid;
+}
+
+function runContactScript() {
+    if (state.contact.isRunning) return;
+    
+    // 1. Get Values
+    const name = document.getElementById('in-name').value.trim();
+    const email = document.getElementById('in-email').value.trim();
+    const intent = document.getElementById('in-intent').value;
+    const message = document.getElementById('in-message').value.trim();
+    const btn = document.getElementById('run-script-btn');
+    const term = document.getElementById('terminal-output');
+
+    // 2. Validate (Stop if invalid)
+    // Clear terminal line for a fresh run attempt
+    term.innerHTML = '<span class="path">user@naveen-portfolio:~/scripts$</span>';
+    
+    if (!validateInputs(name, email, message)) {
+        // Validation failed, errors already printed in helper
+        term.innerHTML += `<br><span class="path">user@naveen-portfolio:~/scripts$</span> <span class="cursor-blink">_</span>`;
+        return; 
+    }
+
+    // 3. Start Execution
+    state.contact.isRunning = true;
+    
+    // UI Feedback
+    btn.style.background = '#fbbf24'; 
+    btn.innerHTML = '⚡ RUNNING...';
+    
+    const lines = [
+        `> python3 contact_me.py --intent="${intent}"`,
+        '> Compiling payload...',
+        '> Importing dependencies [agent_factory, sys]... OK',
+        '> Validating sender credentials... OK',
+        '> Establishing secure handshake with Naveen.ai...',
+    ];
+
+    let delay = 0;
+
+    // Play "Fake" logs first to build suspense
+    lines.forEach((line, index) => {
+        delay += Math.random() * 300 + 200;
+        setTimeout(() => {
+            term.innerHTML += `<br><span class="log-msg">${line}</span>`;
+            term.scrollTop = term.scrollHeight;
+        }, delay);
+    });
+
+    // 4. Actual EmailJS Call (Happens after logs start)
+    setTimeout(() => {
+        term.innerHTML += `<br><span class="log-msg">> Transmitting packets...</span>`;
+        term.scrollTop = term.scrollHeight;
+
+        const serviceID = import.meta.env.VITE_EMAILJS_SERVICE_ID;
+        const templateID = import.meta.env.VITE_EMAILJS_TEMPLATE_ID;
+
+        const params = {
+            from_name: name,
+            reply_to: email,
+            intent: intent,
+            message: message
+        };
+
+        emailjs.send(serviceID, templateID, params)
+            .then(() => {
+                // SUCCESS
+                const id = Math.floor(Math.random() * 9000) + 1000;
+                term.innerHTML += `<br><span class="success-msg">✔ SUCCESS: Message delivered to buffer [ID: ${id}].</span>`;
+                term.innerHTML += `<br><span class="path">user@naveen-portfolio:~/scripts$</span> <span class="cursor-blink">_</span>`;
+                term.scrollTop = term.scrollHeight;
+
+                btn.style.background = '#4ade80';
+                btn.innerHTML = '<span class="play-icon">▶</span> SCRIPT EXECUTED';
+
+                // Reset Form
+                setTimeout(() => {
+                    state.contact.isRunning = false;
+                    document.getElementById('ide-form').reset();
+                    updateCodePreview(); // Reset the Python preview too
+                    btn.innerHTML = '<span class="play-icon">▶</span> RUN SCRIPT';
+                }, 4000);
+            })
+            .catch((err) => {
+                // ERROR
+                console.error('EmailJS Error:', err);
+                term.innerHTML += `<br><span class="loss-val">✖ FATAL ERROR: Connection Refused. Server responded: ${JSON.stringify(err)}</span>`;
+                term.innerHTML += `<br><span class="path">user@naveen-portfolio:~/scripts$</span> <span class="cursor-blink">_</span>`;
+                term.scrollTop = term.scrollHeight;
+                
+                btn.style.background = '#ff5f56'; // Red for error
+                btn.innerHTML = '⚠ FAILED';
+                state.contact.isRunning = false;
+                
+                setTimeout(() => {
+                    btn.style.background = '#4ade80';
+                    btn.innerHTML = '<span class="play-icon">▶</span> RUN SCRIPT';
+                }, 4000);
+            });
+
+    }, delay + 500); // Wait for logs to finish before sending
+}
+
+
+/* --- GLOBAL SMOOTH SCROLL (Prevents URL Hash Change) --- */
+function initGlobalScroll() {
+    document.addEventListener('click', (e) => {
+        // 1. Find the closest anchor tag (allows clicking icons inside links)
+        const link = e.target.closest('a');
+        if (!link) return;
+
+        const href = link.getAttribute('href');
+
+        // 2. Check if it is an internal link (starts with #)
+        if (href && href.startsWith('#') && href.length > 1) {
+            e.preventDefault(); // <--- THIS STOPS THE URL CHANGE
+
+            const targetId = href.substring(1);
+            const targetEl = document.getElementById(targetId);
+
+            if (targetEl) {
+                // 3. Scroll to target
+                targetEl.scrollIntoView({ behavior: 'smooth' });
+
+                // 4. (Optional) Close Mobile Menu if it's open
+                // This ensures clicking a footer link or nav link on mobile closes the menu
+                const mobileMenu = document.querySelector('.mobile-menu-overlay');
+                /* If you kept the hamburger code, this helps close it automatically */
+                if (mobileMenu && mobileMenu.classList.contains('active')) {
+                   // trigger the hamburger click to close it cleanly if needed, 
+                   // or just remove the class directly:
+                   mobileMenu.classList.remove('active');
+                   const hamBtn = document.querySelector('.hamburger-btn');
+                   if(hamBtn) hamBtn.classList.remove('open');
+                }
+            }
+        }
+    });
+}

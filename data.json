@@ -1,0 +1,202 @@
+{
+  "hero": {
+    "role": "Founder / AI Engineer",
+    "headline_prefix": "Architecting",
+    "headline_gradient": "Intelligence",
+    "subtitle": "Strong ideas fail when structure is absent. Architecture turns unclear problems into deliberate systems — using AI with intent, from research to production at scale.",
+    "tech_stack": [
+      "Business Operations",
+      "Full Stack",
+      "MLOps",
+      "DevOps"
+    ],
+    "stats": {
+      "sampler": "STRATEGY_DPM++",
+      "steps": 50,
+      "roi": "OPTIMIZED"
+    }
+  },
+  "about": {
+    "birth_date": "2002-04-02T10:00:00+05:30",
+    "profile": {
+      "name": "NAVEEN V",
+      "roles": ["FOUNDER", "BUILDER"],
+      "link_text": "@ AGENTS FACTORY ↗",
+      "link_url": "https://agentsfactory.io",
+      "title": "Multi-Modal Engineer (Research <-> Product)",
+      "description": "I don't just train models; I build products that think. Specializing in the \"last mile\" of AI—taking architectures from theoretical papers and engineering them into scalable, user-obsessed applications."
+    },
+    "config_display": {
+      "organization": "Agents Factory",
+      "architecture": "Transformer-based (Vision + Text)",
+      "parameters": "70B (High Complexity)",
+      "context_window": "Infinite Learning",
+      "capabilities": [
+        "Full Stack Engineering",
+        "Generative AI Pipelines",
+        "LLM Fine-Tuning",
+        "System Architecture",
+        "Product Strategy"
+      ],
+      "inference_engine": "Bio-Neural_Net_v1"
+    },
+    "skills": [
+      { "name": "Python / PyTorch", "weight": 0.98 },
+      { "name": "Generative AI / Diffusers", "weight": 0.95 },
+      { "name": "React / Next.js", "weight": 0.92 },
+      { "name": "System Design", "weight": 0.88 },
+      { "name": "FastAPI / Backend", "weight": 0.90 },
+      { "name": "Docker / Kubernetes", "weight": 0.82 },
+      { "name": "Vector Databases", "weight": 0.85 },
+      { "name": "UI / UX Design", "weight": 0.78 },
+      { "name": "Prompt Engineering", "weight": 0.96 },
+      { "name": "TypeScript", "weight": 0.89 },
+      { "name": "Rust (Learning)", "weight": 0.60 },
+      { "name": "Open Source", "weight": 0.85 }
+    ]
+  },
+  "education": {
+    "epochs": [
+      { 
+        "id": "01", "label": "INIT", "loss": "0.854", "acc": "0.201", 
+        "degree": "Bio-Maths Foundations", "year": "2017 - 2019", 
+        "desc": "Initializing weights. Merging organic systems (Biology) with Logic (Maths)." 
+      },
+      { 
+        "id": "02", "label": "CONV", "loss": "0.552", "acc": "0.654", 
+        "degree": "B.Sc Mathematics w/ CA @ PSG CAS", "year": "2019 - 2022", 
+        "desc": "Feature Extraction. Converting abstract theorems into executable logic." 
+      },
+      { 
+        "id": "03", "label": "DEEP", "loss": "0.251", "acc": "0.925", 
+        "degree": "MCA @ CEG - Anna University", "year": "2023 - 2025", 
+        "desc": "Architecture Scaling. High-dimensional engineering at India's oldest tech institution." 
+      },
+      { 
+        "id": "04", "label": "RLHF", "loss": "0.050", "acc": "0.992", 
+        "degree": "PGDM @ LIBA", "year": "2025 - Present", 
+        "desc": ">> FINE_TUNING... Aligning raw technical capability with Strategic Business Value.",
+        "active": true
+      }
+    ],
+    "graph_zones": [
+      { "id": 0, "label": "INIT", "startLoss": 1.0, "endLoss": 0.7, "volatility": 0.08, "gained": "System Initialization.", "lost": "Ignorance of challenges." },
+      { "id": 1, "label": "BIO-MATH", "startLoss": 0.7, "endLoss": 0.55, "volatility": 0.15, "gained": "Logic & organic systems.", "lost": "Childhood naivety." },
+      { "id": 2, "label": "BSC", "startLoss": 0.55, "endLoss": 0.35, "volatility": 0.12, "gained": "Abstract theorems to logic.", "lost": "Sleep cycles." },
+      { "id": 3, "label": "MCA", "startLoss": 0.35, "endLoss": 0.15, "volatility": 0.09, "gained": "High-dimensional engineering.", "lost": "Comfort zone." },
+      { "id": 4, "label": "PGDM", "startLoss": 0.15, "endLoss": 0.05, "volatility": 0.04, "gained": "Strategic Business Alignment.", "lost": "Technical tunnel vision." },
+      { "id": 5, "label": "FOUNDER", "startLoss": 0.05, "endLoss": 0.02, "volatility": 0.01, "gained": "Real-world Impact.", "lost": "Fear of failure." }
+    ]
+  },
+  "neural": {
+    "layers": [
+      {
+        "title": "INPUT LAYER",
+        "nodes": [
+          { "id": "in-docs", "label": "Docs" },
+          { "id": "in-voice", "label": "Voice" },
+          { "id": "in-vision", "label": "Vision" },
+          { "id": "in-data", "label": "Data" }
+        ]
+      },
+      {
+        "title": "INTERFACE",
+        "nodes": [
+          { "id": "fe-next", "label": "Next.js" },
+          { "id": "fe-react", "label": "React" },
+          { "id": "api-sock", "label": "WebSocket" },
+          { "id": "api-rest", "label": "REST" }
+        ]
+      },
+      {
+        "title": "PROCESSING",
+        "nodes": [
+          { "id": "be-fast", "label": "FastAPI" },
+          { "id": "be-rust", "label": "Rust" },
+          { "id": "ai-llm", "label": "LLM" },
+          { "id": "ai-rag", "label": "RAG" },
+          { "id": "ai-cv", "label": "Vision AI" }
+        ]
+      },
+      {
+        "title": "STORAGE",
+        "nodes": [
+          { "id": "db-vec", "label": "Vector" },
+          { "id": "db-psql", "label": "PostgreSQL" },
+          { "id": "c-aws", "label": "Cloud" }
+        ]
+      }
+    ],
+    "agents": [
+      {
+        "id": "p-textro",
+        "badge": "DOC_INTEL",
+        "name": "Textro AI",
+        "desc": "High-speed document analysis using custom SLMs for intelligent extraction and processing.",
+        "link": "https://textro.agentsfactory.io/",
+        "path": ["in-docs", "in-data", "fe-next", "api-rest", "be-fast", "ai-llm", "ai-rag", "db-vec", "db-psql", "c-aws"],
+        "hasHint": true
+      },
+      {
+        "id": "p-eyra",
+        "badge": "VISION_AI",
+        "name": "Eyra Vision",
+        "desc": "Industrial automation monitoring with edge computer vision for real-time insights.",
+        "link": "https://eyra.agentsfactory.io/",
+        "path": ["in-vision", "in-data", "fe-react", "api-sock", "be-rust", "ai-cv", "db-psql", "c-aws"]
+      },
+      {
+        "id": "p-melo",
+        "badge": "VOICE_SYS",
+        "name": "Melovox",
+        "desc": "Real-time conversational agent with sub-500ms latency for seamless voice interaction.",
+        "link": "https://melovox.agentsfactory.io/",
+        "path": ["in-voice", "fe-react", "api-sock", "be-fast", "ai-llm", "db-vec", "c-aws"]
+      }
+    ]
+  },
+  "contact": {
+    "filename": "contact_me.py",
+    "email": "naveenvijaymath@gmail.com",
+    "email_org": "naveen@agentsfactory.io", 
+    "phone": "+91 63790 21566",
+    "location": "Coimbatore, IN [11.0749004° N, 77.1930872° E]",
+    "socials": [
+      { 
+        "label": "origin/github", 
+        "link": "https://github.com/Naveen-2402", 
+        "icon": "<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22'></path></svg>" 
+      },
+      { 
+        "label": "origin/linkedin", 
+        "link": "https://www.linkedin.com/in/naveen-v-7672bb20b/", 
+        "icon": "<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z'></path><rect x='2' y='9' width='4' height='12'></rect><circle cx='4' cy='4' r='2'></circle></svg>" 
+      }
+    ],
+    "placeholders": {
+      "name": "Future_CoFounder",
+      "email": "funding@venture_capital.com",
+      "message": "def make_offer(): return \"Let's build the future.\""
+    }
+  },
+  "footer": {
+    "title": "REFERENCES & CITATIONS",
+    "abstract": "ABSTRACT: Naveen V is a Multi-Modal Engineer bridging the gap between theoretical AI architectures and scalable production systems. Specializing in Large Language Models, Generative Pipelines, and System Design. Targets the right users with user-focused marketing strategy.",
+    "references": [
+      { "id": "[1]", "label": "Initialization (Home)", "url": "#hero-section" },
+      { "id": "[2]", "label": "Model_Card (About)", "url": "#model-card-section" },
+      { "id": "[3]", "label": "Training_Logs (Experience)", "url": "#training-dashboard" },
+      { "id": "[4]", "label": "Neural_Architecture (Projects)", "url": "#neural-projects" }
+
+
+    ],
+    "connect": [
+      { "id": "[5]", "label": "GitHub Repositories", "url": "https://github.com/Naveen-2402" },
+      { "id": "[6]", "label": "LinkedIn Profile", "url": "https://www.linkedin.com/in/naveen-v-7672bb20b/" },
+      { "id": "[7]", "label": "Email Correspondence", "url": "mailto:naveenvijaymath@gmail.com" }
+
+    ],
+    "bibtex": "@misc{naveen2025portfolio,\n  author = {Naveen V},\n  title = {Architecting Intelligence: A Portfolio},\n  year = {2026},\n  publisher = {Agents Factory},\n  howpublished = {\\url{https://agentsfactory.io}},\n  note = {Accessed via Web}\n}",
+    "meta": "Last updated: 25-12-2025 | v1.12.25-stable"
+  }
+}
