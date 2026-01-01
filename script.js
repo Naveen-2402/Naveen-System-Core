@@ -112,9 +112,19 @@ const sectionObserver = new IntersectionObserver((entries) => {
         // 2. Section Specific Logic
         
         // HERO SECTION
-        if(entry.target.closest('#hero-section')) {
-            if(!entry.isIntersecting && state.hero.isComplete) {
-                resetHeroAnimation();
+        // HERO SECTION
+        // HERO SECTION
+        if (entry.target.closest('#hero-section')) {
+            if (entry.isIntersecting) {
+                // RESUME: Only if loading is done (isComplete) and it's not already running (!rafId)
+                if (state.hero.isComplete && !state.hero.rafId) {
+                    animateHero();
+                }
+            } else {
+                // PAUSE/RESET: Save resources when out of view
+                if (state.hero.isComplete) {
+                    resetHeroAnimation();
+                }
             }
         }
 
@@ -672,7 +682,38 @@ function animateHero() {
     }
 }
 
+function resetHeroAnimation() {
+    // 1. Stop the Animation Loop
+    if (state.hero.rafId) {
+        cancelAnimationFrame(state.hero.rafId);
+        state.hero.rafId = null;
+    }
 
+    // 2. Clear the Canvas
+    const { width, height } = state.hero;
+    if (state.hero.contentCtx) {
+        state.hero.contentCtx.clearRect(0, 0, width, height);
+    }
+
+    // 3. "Soft" Reset (The Reduction Logic)
+    // Check if we already have particles. If so, don't destroy them.
+    if (state.hero.particles && state.hero.particles.length > 0) {
+        state.hero.particles.forEach(p => {
+            // Stop any existing movement
+            p.vx = 0;
+            p.vy = 0;
+            
+            // Jitter: Move the particle 30px-50px away from its target.
+            // This creates a "focusing" effect rather than a "fly-in" effect.
+            const range = 50; 
+            p.x = p.targetX + (Math.random() - 0.5) * range;
+            p.y = p.targetY + (Math.random() - 0.5) * range;
+        });
+    } else {
+        // Fallback: If the array is empty (rare), run the full creator
+        createParticles();
+    }
+}
 
 
 /* =========================================
