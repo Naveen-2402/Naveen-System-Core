@@ -160,7 +160,7 @@
     "email": "naveenvijaymath@gmail.com",
     "email_org": "naveen@agentsfactory.io", 
     "phone": "+91 63790 21566",
-    "location": "Coimbatore, IN [11.0749004° N, 77.1930872° E]",
+    "location": "Coimbatore, IN [11.0749° N, 77.1930° E]",
     "socials": [
       { 
         "label": "origin/github", 
@@ -193,7 +193,8 @@
     "connect": [
       { "id": "[5]", "label": "GitHub Repositories", "url": "https://github.com/Naveen-2402" },
       { "id": "[6]", "label": "LinkedIn Profile", "url": "https://www.linkedin.com/in/naveen-v-7672bb20b/" },
-      { "id": "[7]", "label": "Email Correspondence", "url": "mailto:naveenvijaymath@gmail.com" }
+      { "id": "[7]", "label": "Email Correspondence", "url": "mailto:naveenvijaymath@gmail.com" },
+      { "id": "[8]", "label": "Organisation", "url": "https://agentsfactory.io/" }
 
     ],
     "bibtex": "@misc{naveen2025portfolio,\n  author = {Naveen V},\n  title = {Architecting Intelligence: A Portfolio},\n  year = {2026},\n  publisher = {Agents Factory},\n  howpublished = {\\url{https://agentsfactory.io}},\n  note = {Accessed via Web}\n}",

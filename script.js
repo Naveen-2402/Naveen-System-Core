@@ -740,12 +740,17 @@ function initModelCard() {
         badgeContainer.appendChild(span);
     });
     
-    // Add Link Badge
+    // --- UPDATED SECTION: Add Link Badge (Agents Factory) ---
     const link = document.createElement('a');
     link.href = d.profile.link_url;
     link.target = '_blank';
     link.style.textDecoration = 'none';
-    link.innerHTML = `<span class="badge outline" style="cursor: pointer;">${d.profile.link_text}</span>`;
+    
+    // Added 'org-highlight' class for the sheen effect and '↗' for visual cue
+    link.innerHTML = `<span class="badge outline org-highlight" style="cursor: pointer;">
+        ${d.profile.link_text} 
+    </span>`;
+    
     badgeContainer.appendChild(link);
 
     // 2. Build Heatmap
